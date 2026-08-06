@@ -449,8 +449,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getDeviceHwid(): String {
-        return Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "UNKNOWN_HWID"
+        val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+        if (androidId == null || androidId == "0000000000000000") {
+            val deviceIdentifier = "35" +
+            Build.BOARD.length % 10 +
+            Build.BRAND.length % 10 +
+            Build.CPU_ABI.length % 10 +
+            Build.DEVICE.length % 10 +
+            Build.DISPLAY.length % 10 +
+            Build.HOST.length % 10 +
+            Build.ID.length % 10 +
+            Build.MANUFACTURER.length % 10 +
+            Build.MODEL.length % 10 +
+            Build.PRODUCT.length % 10 +
+            Build.TAGS.length % 10 +
+            Build.TYPE.length % 10 +
+            Build.USER.length % 10
+            return deviceIdentifier
+        }
+        return androidId
     }
+
 
     private fun checkNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
