@@ -142,9 +142,9 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            appendLog("Notification Permission Granted!")
+            appendLog("Notification permission granted!")
         } else {
-            appendLog("Notification Permission Denied!")
+            appendLog("Notification permission denied!")
         }
     }
 
@@ -152,10 +152,10 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            appendLog("VPN Permission Granted!")
+            appendLog("VPN permission granted!")
             connectVpnWithPendingConfig()
         } else {
-            appendLog("VPN Permission Denied!")
+            appendLog("VPN permission denied!")
             resetUi()
             Toast.makeText(this, "VPN Permission is required!", Toast.LENGTH_SHORT).show()
         }
@@ -264,8 +264,8 @@ class MainActivity : AppCompatActivity() {
 
         updateActiveServerName()
 
-        appendLog("Warp Tunnel App Started")
-        appendLog("Ready To Connect...")
+        appendLog("Warp Tunnel app started")
+        appendLog("Ready to connect...")
 
         checkNotificationPermission()
     }
@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                appendLog("License Startup Error: ${e.message}")
+                appendLog("License startup error: ${e.message}")
             }
         }
     }
@@ -320,6 +320,11 @@ class MainActivity : AppCompatActivity() {
         } else {
             tvExpireDate.text = "Not Activated / Expired"
             tvExpireDate.setTextColor(Color.parseColor("#F87171"))
+
+            if (isConnected) {
+                disconnectVpn()
+                appendLog("License not found. Disconnecting...")
+            }
         }
     }
 
@@ -346,6 +351,11 @@ class MainActivity : AppCompatActivity() {
                     tvExpireDate.text = "License Expired"
                     tvExpireDate.setTextColor(Color.parseColor("#F87171"))
                     authManager.clearLicenseData()
+
+                    if (isConnected) {
+                        disconnectVpn()
+                        appendLog("⚠️ License expired. Connection terminated.")
+                    }
                     break
                 }
                 delay(1000)
@@ -384,16 +394,16 @@ class MainActivity : AppCompatActivity() {
             val inputKey = etLicenseKey.text.toString().trim()
             if (inputKey.isNotEmpty()) {
                 lifecycleScope.launch {
-                    appendLog("Verifying Serial Key...")
+                    appendLog("Verifying serial key...")
                     val (success, message) = authManager.checkLicenseServer(hwid, inputKey)
                     if (success) {
                         Toast.makeText(this@MainActivity, "🎉 Activated Successfully!", Toast.LENGTH_SHORT).show()
-                        appendLog("✅ License Key Activated!")
+                        appendLog("✅ License key activated!")
                         updateExpireDateUI()
                         dialog.dismiss()
                     } else {
                         Toast.makeText(this@MainActivity, "❌ $message", Toast.LENGTH_LONG).show()
-                        appendLog("❌ Activation Error: $message")
+                        appendLog("❌ $message")
                     }
                 }
             } else {
@@ -556,10 +566,10 @@ class MainActivity : AppCompatActivity() {
             val prefs = getSharedPreferences("WARP_VPN_PREFS", Context.MODE_PRIVATE)
             prefs.edit().putBoolean("SPLIT_TUNNEL_ENABLED", isChecked).apply()
             if (isChecked) {
-                appendLog("Split Tunneling Enabled")
+                appendLog("Split tunneling enabled")
                 startActivity(Intent(this, AppListActivity::class.java))
             } else {
-                appendLog("Split Tunneling Disabled")
+                appendLog("Split tunneling disabled")
             }
         }
 
@@ -595,11 +605,11 @@ class MainActivity : AppCompatActivity() {
                 else -> "DEFAULT"
             }
             prefs.edit().putString("DNS_SETTING", dnsType).apply()
-            appendLog("DNS Mode Set To: $dnsType")
+            appendLog("DNS mode set to: $dnsType")
         }
 
         btnClearLogs.setOnClickListener {
-            tvLogs.text = "Logs Cleared.\n"
+            tvLogs.text = "Logs cleared.\n"
             Toast.makeText(this, "Logs Cleared", Toast.LENGTH_SHORT).show()
         }
 
@@ -614,14 +624,14 @@ class MainActivity : AppCompatActivity() {
             val prefs = getSharedPreferences("WARP_VPN_PREFS", Context.MODE_PRIVATE)
             prefs.edit().putString("WARP_ENGINE", "CF_DIRECT").apply()
             setEngineSelectionUI(true)
-            appendLog("Engine Set To Cloudflare Direct API")
+            appendLog("Engine set to cloudflare direct api")
         }
 
         cardEngineCustom.setOnClickListener {
             val prefs = getSharedPreferences("WARP_VPN_PREFS", Context.MODE_PRIVATE)
             prefs.edit().putString("WARP_ENGINE", "CUSTOM_API").apply()
             setEngineSelectionUI(false)
-            appendLog("Engine Set To Custom Backup API")
+            appendLog("Engine set to custom backup api")
         }
 
         btnRestoreDefaults.setOnClickListener {
@@ -811,7 +821,7 @@ class MainActivity : AppCompatActivity() {
                         Toast.makeText(this, "Please Disconnect VPN First!", Toast.LENGTH_SHORT).show()
                     } else {
                         deleteConfigById(deleteConfig.id)
-                        appendLog("Deleted Config: ${deleteConfig.name}")
+                        appendLog("Deleted config: ${deleteConfig.name}")
                         refreshList()
                         updateActiveServerName()
                     }
@@ -859,18 +869,18 @@ class MainActivity : AppCompatActivity() {
 
                     saveNewConfig(ConfigModel(newId, name, parsedConfig, maskedEndpoint, true))
 
-                    appendLog("Config Imported Successfully!")
-                    Toast.makeText(this@MainActivity, "Config Imported Successfully!", Toast.LENGTH_SHORT).show()
+                    appendLog("Config imported successfully!")
+                    Toast.makeText(this@MainActivity, "Config imported successfully!", Toast.LENGTH_SHORT).show()
                     updateActiveServerName()
                     dialog.dismiss()
 
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    Toast.makeText(this@MainActivity, "Invalid Config Format: ${e.message}", Toast.LENGTH_LONG).show()
-                    appendLog("Import Error: ${e.message}")
+                    Toast.makeText(this@MainActivity, "Invalid config format: ${e.message}", Toast.LENGTH_LONG).show()
+                    appendLog("Import error: ${e.message}")
                 }
             } else {
-                Toast.makeText(this, "Please paste valid Config!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please paste valid config!", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -998,14 +1008,14 @@ class MainActivity : AppCompatActivity() {
                 updateExpireDateUI()
 
                 if (!isValid) {
-                    Toast.makeText(this@MainActivity, "❌ Connection Denied: $message", Toast.LENGTH_LONG).show()
-                    appendLog("❌ License Check Failed: $message")
+                    Toast.makeText(this@MainActivity, "❌ Connection denied: $message", Toast.LENGTH_LONG).show()
+                    appendLog("❌ License check failed: $message")
                     resetUi()
                     showActivateLicenseDialog()
                     return@withContext
                 }
 
-                appendLog("✅ License Active. Proceeding with VPN Connection...")
+                appendLog("✅ License active. Proceeding with vpn connection...")
                 startActualVpnConnection()
             }
         }
@@ -1014,7 +1024,7 @@ class MainActivity : AppCompatActivity() {
     private fun startActualVpnConnection() {
         tvStatus.text = "CONNECTING..."
         btnConnectCard.setStrokeColor(Color.parseColor("#F59E0B"))
-        appendLog("Preparing VPN Connection...")
+        appendLog("Preparing vpn connection...")
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -1025,15 +1035,15 @@ class MainActivity : AppCompatActivity() {
                     val prefs = getSharedPreferences("WARP_VPN_PREFS", Context.MODE_PRIVATE)
                     val engineMode = prefs.getString("WARP_ENGINE", "CF_DIRECT") ?: "CF_DIRECT"
 
-                    appendLog("No Config Found. Requesting NEW Config Via Engine: $engineMode...")
+                    appendLog("No config found. Requesting new config via Engine: $engineMode...")
 
                     try {
                         configStr = wgcfManager.registerAndGetConfig(engineMode)
-                        appendLog("Config Received Successfully!")
+                        appendLog("Config received successfully!")
                     } catch (e: Exception) {
                         appendLog("Error: ${e.message}")
                         val fallbackEngine = if (engineMode == "CF_DIRECT") "CUSTOM_API" else "CF_DIRECT"
-                        appendLog("Trying Fallback Engine: $fallbackEngine")
+                        appendLog("Trying fallback engine: $fallbackEngine")
                         configStr = wgcfManager.registerAndGetConfig(fallbackEngine)
                     }
 
@@ -1048,20 +1058,20 @@ class MainActivity : AppCompatActivity() {
                         true
                     )
                     saveNewConfig(newModel)
-                    appendLog("New Warp Config Saved!")
+                    appendLog("New warp config saved!")
                 } else {
                     configStr = selectedModel.content
-                    appendLog("Using Active Config [${selectedModel.name}]...")
+                    appendLog("Using active config [${selectedModel.name}]...")
                 }
 
                 configStr = applyCustomDnsToConfig(configStr)
 
                 try {
                     Config.parse(ByteArrayInputStream(configStr.toByteArray()))
-                    appendLog("✅ Config Validation Successful")
+                    appendLog("✅ Config validation successful")
                 } catch (e: Exception) {
-                    appendLog("❌ Config Validation Failed: ${e.message}")
-                    throw Exception("Invalid Config: ${e.message}")
+                    appendLog("❌ Config validation failed: ${e.message}")
+                    throw Exception("Invalid config: ${e.message}")
                 }
 
                 pendingConfigStr = configStr
@@ -1069,10 +1079,10 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     val intent = VpnService.prepare(this@MainActivity)
                     if (intent != null) {
-                        appendLog("Requesting VPN Permission...")
+                        appendLog("Requesting vpn permission...")
                         vpnPermissionLauncher.launch(intent)
                     } else {
-                        appendLog("VPN Permission Already Granted.")
+                        appendLog("VPN permission already granted.")
                         connectVpnWithPendingConfig()
                     }
                 }
@@ -1081,7 +1091,7 @@ class MainActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     appendLog("Error: ${e.message}")
                     e.printStackTrace()
-                    Toast.makeText(this@MainActivity, "Connection Failed!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Connection failed!", Toast.LENGTH_SHORT).show()
                     resetUi()
                 }
             }
@@ -1093,7 +1103,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 val configStr = pendingConfigStr ?: wgcfManager.registerAndGetConfig(engineMode = "CF_DIRECT")
 
-                appendLog("Building Tunnel Session...")
+                appendLog("Building tunnel session...")
                 val parsedConfig = Config.parse(ByteArrayInputStream(configStr.toByteArray()))
 
                 val prefs = getSharedPreferences("WARP_VPN_PREFS", Context.MODE_PRIVATE)
@@ -1112,7 +1122,7 @@ class MainActivity : AppCompatActivity() {
 
                 if (isSplitEnabled && excludedApps.isNotEmpty()) {
                     interfaceBuilder.excludeApplications(excludedApps)
-                    appendLog("Split Tunneling Active: Excluded ${excludedApps.size} apps.")
+                    appendLog("Split tunneling active: Excluded ${excludedApps.size} apps.")
                 }
 
                 val finalWgConfig = Config.Builder()
@@ -1142,9 +1152,9 @@ class MainActivity : AppCompatActivity() {
 
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    appendLog("Connection Error: ${e.message}")
+                    appendLog("Connection error: ${e.message}")
                     e.printStackTrace()
-                    Toast.makeText(this@MainActivity, "Connection Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Connection failed: ${e.message}", Toast.LENGTH_LONG).show()
                     resetUi()
                 }
             }
@@ -1166,7 +1176,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    appendLog("Disconnect Error: ${e.message}")
+                    appendLog("Disconnect error: ${e.message}")
                     resetUi()
                 }
             }
@@ -1251,7 +1261,7 @@ class MainActivity : AppCompatActivity() {
 
             // Facebook Ping
             val fbStartTime = System.currentTimeMillis()
-            val fbAddress = InetAddress.getByName("facebook.com")
+            val fbAddress = InetAddress.getByName("h.facebook.com")
             val fbReachable = fbAddress.isReachable(2500)
             val fbPingTime = System.currentTimeMillis() - fbStartTime
 
@@ -1292,7 +1302,7 @@ class MainActivity : AppCompatActivity() {
 
         } catch (e: Exception) {
             if (isActive) {
-                appendLog("Ping Error: ${e.localizedMessage}")
+                appendLog("Ping error: ${e.localizedMessage}")
                 withContext(Dispatchers.Main) {
                     tvCfPing.text = "N/A"
                     tvFbPing.text = "N/A"
@@ -1302,7 +1312,7 @@ class MainActivity : AppCompatActivity() {
                     animateDot(imgCfDot, false)
                     animateDot(imgFbDot, false)
 
-                    notificationHelper.updateNotification("Ping Error")
+                    notificationHelper.updateNotification("Ping error")
                 }
             }
         }
