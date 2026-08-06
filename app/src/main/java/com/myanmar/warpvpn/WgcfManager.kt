@@ -12,8 +12,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.net.InetSocketAddress
-import java.net.Socket
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -55,15 +56,18 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
             ipList.add("162.159.192.$i")
         }
         for (i in 1..250) {
+            ipList.add("162.159.193.$i")
+        }
+        for (i in 1..250) {
             ipList.add("162.159.195.$i")
         }
         return ipList.shuffled()
     }
 
     suspend fun findFastestWorkingEndpoint(timeoutMs: Int = 1200): String = withContext(Dispatchers.IO) {
-        log("🔍 Generated 500 warp ip targets for scanning...")
+        log("🔍 Generated WARP IP targets for scanning...")
         log("⚡ Starting parallel concurrent scan across batches...")
-        
+
         val allIps = generateWarpIpList()
         var bestIp: String? = null
         var lowestLatency = Long.MAX_VALUE
@@ -73,7 +77,7 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
 
         for (chunk in chunkedIps) {
             log("📡 Scanning batch #$batchIndex (50 IPs concurrently)...")
-            
+
             val results = coroutineScope {
                 chunk.map { ip ->
                     async {
@@ -95,7 +99,7 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
             batchIndex++
         }
 
-        val finalIp = bestIp ?: "162.159.195.1"
+        val finalIp = bestIp ?: "162.159.193.1"
         if (bestIp != null) {
             log("🏆 Selected fastest endpoint: ${maskIp(finalIp)} with Latency $lowestLatency ms")
         } else {
@@ -104,22 +108,49 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
 
         return@withContext finalIp
     }
-
+    
     private fun testEndpointLatency(ip: String, timeoutMs: Int): Long {
-        val ports = listOf(500, 2408)
+        try {
+            val startTime = System.currentTimeMillis()
+            val address = InetAddress.getByName(ip)
+            if (address.isReachable(timeoutMs)) {
+                val latency = System.currentTimeMillis() - startTime
+                log("🎯 ICMP Ping Success: ${maskIp(ip)} -> ${latency}ms")
+                return latency
+            }
+        } catch (e: Exception) {
+        }
+        
+        val ports = listOf(2408, 500)
         for (port in ports) {
+            var socket: DatagramSocket? = null
             try {
                 val startTime = System.currentTimeMillis()
-                val socket = Socket()
-                socket.connect(InetSocketAddress(ip, port), timeoutMs)
+                val address = InetAddress.getByName(ip)
+
+                val dummyData = byteArrayOf(0x01, 0x00, 0x00, 0x00)
+                val packet = DatagramPacket(dummyData, dummyData.size, address, port)
+
+                socket = DatagramSocket()
+                socket.soTimeout = timeoutMs
+
+                socket.send(packet)
+
+                val receiveBuffer = ByteArray(64)
+                val receivePacket = DatagramPacket(receiveBuffer, receiveBuffer.size)
+                socket.receive(receivePacket)
+
                 val latency = System.currentTimeMillis() - startTime
                 socket.close()
-                log("🎯 TCP handshake success: ${maskIp(ip)}:$port -> ${latency}ms")
+
+                log("🎯 UDP Ping Success: ${maskIp(ip)}:$port -> ${latency}ms")
                 return latency
             } catch (e: Exception) {
+                socket?.close()
                 continue
             }
         }
+
         return -1L
     }
 
