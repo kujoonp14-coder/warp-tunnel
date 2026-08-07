@@ -53,16 +53,25 @@ jobs:
 
       - name: Grant Execute Permission for Gradle Wrapper
         run: chmod +x ./gradlew
-
-      - name: Build APKs
-        run: ./gradlew assembleDebug --no-daemon
+        
+      - name: Build Release APKs
+        run: ./gradlew assembleRelease --no-daemon
+        
+      - name: Sign APKs with Keystore
+        uses: r3d-act/signed-build-action@v1
+        with:
+          releaseDirectory: app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
 
       # ----------------------------------------------------
-      # 2. Rename APKs to warptunnel-{version}-{arch}.apk
+      # 4. Rename APKs to warptunnel-{version}-{arch}.apk
       # ----------------------------------------------------
       - name: Rename APKs to WarpTunnel Format
         run: |
-          cd app/build/outputs/apk/debug/
+          cd app/build/outputs/apk/release/
           VERSION="${{ steps.read_version.outputs.VERSION }}"
           
           # Rename each APK
@@ -92,62 +101,62 @@ jobs:
           ls -la
 
       # ----------------------------------------------------
-      # 3. Remove original app-*.apk files
+      # 5. Remove original app-*.apk files
       # ----------------------------------------------------
       - name: Remove Original APK Files
         run: |
-          cd app/build/outputs/apk/debug/
+          cd app/build/outputs/apk/release/
           rm -f app-*.apk
           echo "Remaining APK files:"
           ls -la warptunnel-*.apk
 
       # ----------------------------------------------------
-      # 4. Upload Artifacts
+      # 6. Upload Artifacts
       # ----------------------------------------------------
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: WarpTunnel-APKs
-          path: app/build/outputs/apk/debug/warptunnel-*.apk
+          path: app/build/outputs/apk/release/warptunnel-*.apk
           retention-days: 30
 
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
           name: warptunnel-arm64-v8a
-          path: app/build/outputs/apk/debug/warptunnel-*-arm64-v8a.apk
+          path: app/build/outputs/apk/release/warptunnel-*-arm64-v8a.apk
           retention-days: 30
 
       - name: Upload armeabi-v7a APK
         uses: actions/upload-artifact@v4
         with:
           name: warptunnel-armeabi-v7a
-          path: app/build/outputs/apk/debug/warptunnel-*-armeabi-v7a.apk
+          path: app/build/outputs/apk/release/warptunnel-*-armeabi-v7a.apk
           retention-days: 30
 
       - name: Upload x86_64 APK
         uses: actions/upload-artifact@v4
         with:
           name: warptunnel-x86_64
-          path: app/build/outputs/apk/debug/warptunnel-*-x86_64.apk
+          path: app/build/outputs/apk/release/warptunnel-*-x86_64.apk
           retention-days: 30
 
       - name: Upload x86 APK
         uses: actions/upload-artifact@v4
         with:
           name: warptunnel-x86
-          path: app/build/outputs/apk/debug/warptunnel-*-x86.apk
+          path: app/build/outputs/apk/release/warptunnel-*-x86.apk
           retention-days: 30
 
       - name: Upload Universal APK
         uses: actions/upload-artifact@v4
         with:
           name: warptunnel-universal
-          path: app/build/outputs/apk/debug/warptunnel-*-universal.apk
+          path: app/build/outputs/apk/release/warptunnel-*-universal.apk
           retention-days: 30
 
       # ----------------------------------------------------
-      # 5. Upload to GitHub Releases
+      # 7. Upload to GitHub Releases
       # ----------------------------------------------------
       - name: Upload WarpTunnel APKs to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -192,10 +201,10 @@ jobs:
             - Optimized APK sizes
           draft: false
           prerelease: false
-          files: app/build/outputs/apk/debug/warptunnel-*.apk
+          files: app/build/outputs/apk/release/warptunnel-*.apk
 
       # ----------------------------------------------------
-      # 6. GitHub Actions Summary
+      # 8. GitHub Actions Summary
       # ----------------------------------------------------
       - name: Generate APK Summary
         run: |
@@ -206,7 +215,7 @@ jobs:
           echo "| Architecture | File Name | Size | SHA256 |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
           
-          cd app/build/outputs/apk/debug/
+          cd app/build/outputs/apk/release/
           
           for file in warptunnel-*.apk; do
             if [ -f "$file" ]; then
@@ -243,5 +252,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.read_version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "**Build Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "**APK Count:** $(ls -1 app/build/outputs/apk/debug/warptunnel-*.apk 2>/dev/null | wc -l)" >> $GITHUB_STEP_SUMMARY
-          echo "**Total Size:** $(du -sh app/build/outputs/apk/debug/ | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "**APK Count:** $(ls -1 app/build/outputs/apk/release/warptunnel-*.apk 2>/dev/null | wc -l)" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Size:** $(du -sh app/build/outputs/apk/release/ | cut -f1)" >> $GITHUB_STEP_SUMMARY
