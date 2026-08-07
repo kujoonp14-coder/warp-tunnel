@@ -12,18 +12,17 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.net.DatagramPacket
-import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
-
+    
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(3, TimeUnit.SECONDS)
+        .writeTimeout(3, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
@@ -51,37 +50,94 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
     }
 
     private fun generateWarpIpList(): List<String> {
+        val ipv4Prefixes = listOf(
+            "188.114.96.", "188.114.97.", "188.114.98.", "188.114.99.",
+            "162.159.192.", "162.159.193.", "162.159.195.", "8.34.146.",
+            "8.39.214.", "8.39.204.", "8.6.112.", "8.35.211.", "8.39.125.",
+            "8.47.69."
+        )
+
         val ipList = mutableListOf<String>()
-        for (i in 1..250) {
-            ipList.add("162.159.192.$i")
-        }
-        for (i in 1..250) {
-            ipList.add("162.159.193.$i")
-        }
-        for (i in 1..250) {
-            ipList.add("162.159.195.$i")
+        for (prefix in ipv4Prefixes) {
+            for (i in 1..254) {
+                ipList.add("$prefix$i")
+            }
         }
         return ipList.shuffled()
     }
+    
+    suspend fun checkNetworkStats(): Pair<Int, Float> = withContext(Dispatchers.IO) {
+        log("📊 Determining network quality & jitter...")
+        val testTargetUrl = "https://www.google.com/generate_204"
+        val testCount = 10
+        val successfulLatencies = mutableListOf<Long>()
 
+        for (i in 1..testCount) {
+            try {
+                val start = System.currentTimeMillis()
+                val request = Request.Builder().url(testTargetUrl).head().build()
+                val response = client.newCall(request).execute()
+                val latency = System.currentTimeMillis() - start
+
+                if (response.code == 204 || response.isSuccessful) {
+                    successfulLatencies.add(latency)
+                }
+                response.close()
+            } catch (e: Exception) {
+                // Connection fail
+            }
+        }
+
+        if (successfulLatencies.isEmpty()) {
+            log("⚠️ Network test failed. Using default settings.")
+            return@withContext Pair(3, 100f)
+        }
+
+        successfulLatencies.sort()
+        val medianLatency = successfulLatencies[successfulLatencies.size / 2].toInt()
+        val lossRate = ((testCount - successfulLatencies.size).toFloat() / testCount) * 100
+
+        var avgJitter = 0f
+        if (successfulLatencies.size > 1) {
+            var totalJitter = 0L
+            for (i in 0 until successfulLatencies.size - 1) {
+                totalJitter += abs(successfulLatencies[i + 1] - successfulLatencies[i])
+            }
+            avgJitter = totalJitter.toFloat() / (successfulLatencies.size - 1)
+        }
+
+        log("📶 Network Stats -> Median Latency: ${medianLatency}ms | Jitter: ${String.format("%.1f", avgJitter)}ms | Loss: ${String.format("%.1f", lossRate)}%")
+
+        val retries = when {
+            medianLatency >= 200 || lossRate >= 10.0f || avgJitter >= 10.0f -> 7
+            medianLatency >= 100 || lossRate >= 5.0f || avgJitter >= 5.0f -> 5
+            else -> 3
+        }
+
+        return@withContext Pair(retries, lossRate)
+    }
+    
     suspend fun findFastestWorkingEndpoint(timeoutMs: Int = 1200): String = withContext(Dispatchers.IO) {
+        val (retries, _) = checkNetworkStats()
+
         log("🔍 Generated WARP IP targets for scanning...")
-        log("⚡ Starting parallel concurrent scan across batches...")
+        log("⚡ Starting parallel concurrent scan (Retries per IP: $retries)...")
 
         val allIps = generateWarpIpList()
         var bestIp: String? = null
         var lowestLatency = Long.MAX_VALUE
 
-        val chunkedIps = allIps.chunked(50)
+        val chunkedIps = allIps.chunked(40)
         var batchIndex = 1
 
         for (chunk in chunkedIps) {
-            log("📡 Scanning batch #$batchIndex (50 IPs concurrently)...")
+            log("📡 Scanning batch #$batchIndex (${chunk.size} IPs)...")
 
             val results = coroutineScope {
-                chunk.map { ip ->
+                chunk.mapIndexed { idx, ip ->
                     async {
-                        val latency = testEndpointLatency(ip, timeoutMs)
+                        delay((idx * 10).toLong())
+                        val latency = testEndpointMultiRetry(ip, retries, timeoutMs)
                         if (latency > 0) Pair(ip, latency) else null
                     }
                 }.awaitAll().filterNotNull()
@@ -101,7 +157,7 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
 
         val finalIp = bestIp ?: "162.159.193.1"
         if (bestIp != null) {
-            log("🏆 Selected fastest endpoint: ${maskIp(finalIp)} with Latency $lowestLatency ms")
+            log("🏆 Selected fastest endpoint: ${maskIp(finalIp)} with Avg Latency $lowestLatency ms")
         } else {
             log("⚠️ Scan completed with no alive response. Using fallback: ${maskIp(finalIp)}")
         }
@@ -109,48 +165,35 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
         return@withContext finalIp
     }
     
-    private fun testEndpointLatency(ip: String, timeoutMs: Int): Long {
+    private suspend fun testEndpointMultiRetry(ip: String, retries: Int, timeoutMs: Int): Long = coroutineScope {
+        val latencies = mutableListOf<Long>()
+
+        val jobs = (0 until retries).map { retryIndex ->
+            async {
+                delay((retryIndex * 50).toLong())
+                testEndpointSingle(ip, timeoutMs)
+            }
+        }
+
+        val results = jobs.awaitAll()
+        for (l in results) {
+            if (l > 0) latencies.add(l)
+        }
+
+        if (latencies.isEmpty()) return@coroutineScope -1L
+        return@coroutineScope latencies.average().toLong()
+    }
+
+    private fun testEndpointSingle(ip: String, timeoutMs: Int): Long {
         try {
             val startTime = System.currentTimeMillis()
             val address = InetAddress.getByName(ip)
             if (address.isReachable(timeoutMs)) {
-                val latency = System.currentTimeMillis() - startTime
-                log("🎯 ICMP Ping Success: ${maskIp(ip)} -> ${latency}ms")
-                return latency
+                return System.currentTimeMillis() - startTime
             }
         } catch (e: Exception) {
+            // Ignore
         }
-        
-        val ports = listOf(2408, 500)
-        for (port in ports) {
-            var socket: DatagramSocket? = null
-            try {
-                val startTime = System.currentTimeMillis()
-                val address = InetAddress.getByName(ip)
-
-                val dummyData = byteArrayOf(0x01, 0x00, 0x00, 0x00)
-                val packet = DatagramPacket(dummyData, dummyData.size, address, port)
-
-                socket = DatagramSocket()
-                socket.soTimeout = timeoutMs
-
-                socket.send(packet)
-
-                val receiveBuffer = ByteArray(64)
-                val receivePacket = DatagramPacket(receiveBuffer, receiveBuffer.size)
-                socket.receive(receivePacket)
-
-                val latency = System.currentTimeMillis() - startTime
-                socket.close()
-
-                log("🎯 UDP Ping Success: ${maskIp(ip)}:$port -> ${latency}ms")
-                return latency
-            } catch (e: Exception) {
-                socket?.close()
-                continue
-            }
-        }
-
         return -1L
     }
 
@@ -329,7 +372,7 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
     }
 
     suspend fun testEndpoint(endpoint: String, timeout: Int = 2000): Boolean = withContext(Dispatchers.IO) {
-        return@withContext testEndpointLatency(endpoint, timeout) > 0
+        return@withContext testEndpointSingle(endpoint, timeout) > 0
     }
 
     fun getAllEndpoints(): List<String> = generateWarpIpList()
