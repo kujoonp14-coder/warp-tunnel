@@ -26,7 +26,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # 1. Version ကို config/version ဖိုင်မှ ဖတ်ခြင်း
+      # 1
       - name: Read Version from config/version
         id: read_version
         run: |
@@ -37,36 +37,43 @@ jobs:
             echo "VERSION=1.0.0" >> $GITHUB_OUTPUT
           fi
 
+      # 2
+      - name: Generate Gradle Wrapper if missing
+        run: |
+          if [ ! -f "./gradlew" ]; then
+            echo "gradlew not found. Generating Gradle wrapper..."
+            gradle wrapper --gradle-version 8.5
+          fi
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
       - name: Grant Execute Permission for Gradle Wrapper
         run: chmod +x ./gradlew
 
-      # 2. APK Build လုပ်ခြင်း (Debug mode ဖြင့် build သော်လည်း sign ပြန်လုပ်မည်)
+      # 3
       - name: Build Debug APKs
         run: ./gradlew assembleDebug --no-daemon
 
-      # 3. APK များကို သင်၏ Keystore ဖြင့် Sign လုပ်ခြင်း
+      # 4
       - name: Sign APKs
         uses: r0adkll/sign-android-release@v1
         id: sign_app
         with:
           releaseDirectory: app/build/outputs/apk/debug
-          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
           alias: ${{ secrets.ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
         env:
           BUILD_TOOLS_VERSION: "34.0.0"
 
-      # 4. Sign ပြီးသား APK များကို သတ်မှတ်ထားသော Format အတိုင်း နာမည်ပြောင်းခြင်း
+      # 5
       - name: Rename Signed APKs to WarpTunnel Format
         run: |
           cd app/build/outputs/apk/debug/
           VERSION="${{ steps.read_version.outputs.VERSION }}"
           
-          # Sign ပြီးသား (-signed.apk) ဖိုင်များကိုပဲ ရွေးထုတ်ပြီး rename လုပ်မည်
           for file in *-signed.apk; do
             [ -f "$file" ] || continue
             
@@ -85,11 +92,10 @@ jobs:
             fi
           done
           
-          # မလိုအပ်သော မူရင်း (unsigned) APK များကို ဖျက်ပစ်မည်
           rm -f app-*.apk
           ls -la warptunnel-*.apk
 
-      # 5. Artifacts များအဖြစ် သိမ်းဆည်းခြင်း
+      # 6
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -97,7 +103,7 @@ jobs:
           path: app/build/outputs/apk/debug/warptunnel-*.apk
           retention-days: 30
 
-      # 6. GitHub Release တင်ခြင်း
+      # 7
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
@@ -109,20 +115,6 @@ jobs:
             - Version: ${{ steps.read_version.outputs.VERSION }}
             - Fixed: Hardware ID issue on Android 10+
             - Feature: Consistent Signing for easy updates
-            
-            Note: အရင် version အဟောင်းရှိနေပါက တစ်ကြိမ်သာ ဖျက်ပြီး ပြန်သွင်းပေးပါ။ နောက်ပိုင်း update များတွင် ဖျက်ရန် မလိုတော့ပါ။
           draft: false
           prerelease: false
           files: app/build/outputs/apk/debug/warptunnel-*.apk
-
-      # 7. Build Summary ထုတ်ပြန်ခြင်း
-      - name: Generate Summary
-        run: |
-          echo "### ✅ Signed Build Completed" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.read_version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "| Architecture | File Name |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          cd app/build/outputs/apk/debug/
-          for file in warptunnel-*.apk; do
-            echo "| $(basename $file | cut -d'-' -f3) | \`$file\` |" >> $GITHUB_STEP_SUMMARY
-          done
