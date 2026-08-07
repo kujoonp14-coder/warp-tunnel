@@ -58,7 +58,7 @@ jobs:
         run: ./gradlew assembleRelease --no-daemon
         
       - name: Sign APKs with Keystore
-        uses: r3d-act/signed-build-action@v1
+        uses: r3der/signer-action@v1
         with:
           releaseDirectory: app/build/outputs/apk/release
           signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
