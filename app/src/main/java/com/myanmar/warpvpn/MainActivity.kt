@@ -165,6 +165,12 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("WARP_VPN_PREFS", Context.MODE_PRIVATE)
         val isDark = prefs.getBoolean("DARK_MODE", true)
 
+        if (!NativeUtils.verifyAppSignature(this)) {
+            Toast.makeText(this, "Tampered APK Detected! Closing App.", Toast.LENGTH_LONG).show()
+            finishAffinity()
+            return
+        }
+
         if (isDark) {
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         } else {
