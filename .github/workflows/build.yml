@@ -1,4 +1,4 @@
-name: Build Android APKs
+name: Build & Sign Android APKs
 
 on:
   push:
@@ -26,26 +26,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # ----------------------------------------------------
-      # 1. Read version from config/version
-      # ----------------------------------------------------
+      # 1. Version ကို config/version ဖိုင်မှ ဖတ်ခြင်း
       - name: Read Version from config/version
         id: read_version
         run: |
           if [ -f "config/version" ]; then
             VERSION=$(cat config/version | tr -d '[:space:]')
             echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-            echo "Read version: $VERSION"
           else
-            echo "⚠️ config/version file not found! Using default version 1.0.0"
             echo "VERSION=1.0.0" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Validate or Generate Gradle Wrapper
-        run: |
-          if [ ! -f "./gradlew" ]; then
-            echo "gradlew not found. Generating Gradle wrapper..."
-            gradle wrapper --gradle-version 8.5
           fi
 
       - name: Setup Gradle
@@ -53,232 +42,87 @@ jobs:
 
       - name: Grant Execute Permission for Gradle Wrapper
         run: chmod +x ./gradlew
-        
-      # ----------------------------------------------------
-      # 2. Build Release APKs
-      # ----------------------------------------------------
-      - name: Build Release APKs
-        run: ./gradlew assembleRelease --no-daemon
 
-      # ----------------------------------------------------
-      # 3. Setup Android SDK Tools & Native Signing
-      # ----------------------------------------------------
-      - name: Setup Android SDK Tools
-        uses: android-actions/setup-android@v3
+      # 2. APK Build လုပ်ခြင်း (Debug mode ဖြင့် build သော်လည်း sign ပြန်လုပ်မည်)
+      - name: Build Debug APKs
+        run: ./gradlew assembleDebug --no-daemon
 
-      - name: Sign APKs with Native SDK Tools
+      # 3. APK များကို သင်၏ Keystore ဖြင့် Sign လုပ်ခြင်း
+      - name: Sign APKs
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: app/build/outputs/apk/debug
+          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
+
+      # 4. Sign ပြီးသား APK များကို သတ်မှတ်ထားသော Format အတိုင်း နာမည်ပြောင်းခြင်း
+      - name: Rename Signed APKs to WarpTunnel Format
         run: |
-        
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
-
-          BUILD_TOOLS_PATH="$ANDROID_HOME/build-tools/34.0.0"
-          
-          for file in app/build/outputs/apk/release/*.apk; do
-            if [ -f "$file" ]; then
-              echo "Processing: $file"
-              
-              $BUILD_TOOLS_PATH/zipalign -v -p 4 "$file" "${file%.apk}-aligned.apk"
-              mv "${file%.apk}-aligned.apk" "$file"
-              
-              $BUILD_TOOLS_PATH/apksigner sign \
-                --ks release.keystore \
-                --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
-                --ks-pass pass:"${{ secrets.KEYSTORE_PASSWORD }}" \
-                --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
-                --v1-signing-enabled true \
-                --v2-signing-enabled true \
-                --v3-signing-enabled true \
-                "$file"
-
-              echo "Successfully signed: $file"
-            fi
-          done
-          
-          rm release.keystore
-
-      # ----------------------------------------------------
-      # 4. Rename APKs to warptunnel-{version}-{arch}.apk
-      # ----------------------------------------------------
-      - name: Rename APKs to WarpTunnel Format
-        run: |
-          cd app/build/outputs/apk/release/
+          cd app/build/outputs/apk/debug/
           VERSION="${{ steps.read_version.outputs.VERSION }}"
           
-          # Rename each APK
-          for file in *.apk; do
-            # Skip if already renamed or idsig file
-            if [[ "$file" == warptunnel-* ]] || [[ "$file" == *.idsig ]]; then
-              continue
-            fi
+          # Sign ပြီးသား (-signed.apk) ဖိုင်များကိုပဲ ရွေးထုတ်ပြီး rename လုပ်မည်
+          for file in *-signed.apk; do
+            [ -f "$file" ] || continue
             
             if [[ "$file" == *"arm64-v8a"* ]]; then
               mv "$file" "warptunnel-v${VERSION}-arm64-v8a.apk"
             elif [[ "$file" == *"armeabi-v7a"* ]]; then
               mv "$file" "warptunnel-v${VERSION}-armeabi-v7a.apk"
-            elif [[ "$file" == *"x86_64"* ]] || [[ "$file" == *"x86-64"* ]]; then
+            elif [[ "$file" == *"x86_64"* ]]; then
               mv "$file" "warptunnel-v${VERSION}-x86_64.apk"
             elif [[ "$file" == *"universal"* ]]; then
               mv "$file" "warptunnel-v${VERSION}-universal.apk"
-            elif [[ "$file" == *"x86"* ]] && [[ ! "$file" == *"x86_64"* ]]; then
+            elif [[ "$file" == *"x86"* ]]; then
               mv "$file" "warptunnel-v${VERSION}-x86.apk"
             else
-              # Default rename
-              mv "$file" "warptunnel-v${VERSION}-${file}"
+              mv "$file" "warptunnel-v${VERSION}-${file%-signed.apk}.apk"
             fi
           done
           
-          # List renamed files
-          ls -la
-
-      # ----------------------------------------------------
-      # 5. Remove original app-*.apk & .idsig files
-      # ----------------------------------------------------
-      - name: Clean Output Directory
-        run: |
-          cd app/build/outputs/apk/release/
-          rm -f app-*.apk *.idsig
-          echo "Remaining APK files:"
+          # မလိုအပ်သော မူရင်း (unsigned) APK များကို ဖျက်ပစ်မည်
+          rm -f app-*.apk
           ls -la warptunnel-*.apk
 
-      # ----------------------------------------------------
-      # 6. Upload Artifacts
-      # ----------------------------------------------------
+      # 5. Artifacts များအဖြစ် သိမ်းဆည်းခြင်း
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: WarpTunnel-APKs
-          path: app/build/outputs/apk/release/warptunnel-*.apk
+          name: WarpTunnel-Signed-APKs
+          path: app/build/outputs/apk/debug/warptunnel-*.apk
           retention-days: 30
 
-      - name: Upload arm64-v8a APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: warptunnel-arm64-v8a
-          path: app/build/outputs/apk/release/warptunnel-*-arm64-v8a.apk
-          retention-days: 30
-
-      - name: Upload armeabi-v7a APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: warptunnel-armeabi-v7a
-          path: app/build/outputs/apk/release/warptunnel-*-armeabi-v7a.apk
-          retention-days: 30
-
-      - name: Upload x86_64 APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: warptunnel-x86_64
-          path: app/build/outputs/apk/release/warptunnel-*-x86_64.apk
-          retention-days: 30
-
-      - name: Upload x86 APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: warptunnel-x86
-          path: app/build/outputs/apk/release/warptunnel-*-x86.apk
-          retention-days: 30
-
-      - name: Upload Universal APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: warptunnel-universal
-          path: app/build/outputs/apk/release/warptunnel-*-universal.apk
-          retention-days: 30
-
-      # ----------------------------------------------------
-      # 7. Upload to GitHub Releases
-      # ----------------------------------------------------
-      - name: Upload WarpTunnel APKs to GitHub Releases
+      # 6. GitHub Release တင်ခြင်း
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: "v${{ steps.read_version.outputs.VERSION }}"
           name: "v${{ steps.read_version.outputs.VERSION }}"
           body: |
-            ### 🔥 WARP TUNNEL Android APK Builds
+            ### 🚀 WARP TUNNEL Official Signed Release
+            - Version: ${{ steps.read_version.outputs.VERSION }}
+            - Fixed: Hardware ID issue on Android 10+
+            - Feature: Consistent Signing for easy updates
             
-            | Architecture | Download | Size |
-            | --- | --- | --- |
-            | **ARM64-v8a** (64-bit) | [warptunnel-${{ steps.read_version.outputs.VERSION }}-arm64-v8a.apk]() | ~9.18 MB |
-            | **ARMv7-a** (32-bit) | [warptunnel-${{ steps.read_version.outputs.VERSION }}-armeabi-v7a.apk]() | ~8.64 MB |
-            | **x86_64** (64-bit) | [warptunnel-${{ steps.read_version.outputs.VERSION }}-x86_64.apk]() | ~9.32 MB |
-            | **x86** (32-bit) | [warptunnel-${{ steps.read_version.outputs.VERSION }}-x86.apk]() | ~8.65 MB |
-            | **Universal** (All) | [warptunnel-${{ steps.read_version.outputs.VERSION }}-universal.apk]() | ~17.2 MB |
-            
-            ---
-            
-            ### 📱 Installation Instructions
-            1. Download the APK for your device architecture
-            2. Enable "Install from Unknown Sources" in Settings
-            3. Install and enjoy! 🚀
-            
-            ---
-            
-            ### ⚡ Features
-            - ✅ WireGuard-based WARP VPN
-            - ✅ Auto-config from Cloudflare API
-            - ✅ Custom DNS support (Cloudflare/Google)
-            - ✅ Dark Mode support
-            - ✅ Auto-ping monitoring
-            - ✅ Multiple server config support
-            
-            ---
-            
-            ### 📝 Changelog
-            - Fixed APK Parsing Issue
-            - Enforced Native Android V1, V2, V3 Signing
-            draft: false
-            prerelease: false
-            files: app/build/outputs/apk/release/warptunnel-*.apk
+            Note: အရင် version အဟောင်းရှိနေပါက တစ်ကြိမ်သာ ဖျက်ပြီး ပြန်သွင်းပေးပါ။ နောက်ပိုင်း update များတွင် ဖျက်ရန် မလိုတော့ပါ။
+          draft: false
+          prerelease: false
+          files: app/build/outputs/apk/debug/warptunnel-*.apk
 
-      # ----------------------------------------------------
-      # 8. GitHub Actions Summary
-      # ----------------------------------------------------
-      - name: Generate APK Summary
+      # 7. Build Summary ထုတ်ပြန်ခြင်း
+      - name: Generate Summary
         run: |
-          echo "### 📦 WARP TUNNEL - Built APK Files" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Signed Build Completed" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.read_version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Architecture | File Name | Size | SHA256 |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
-          
-          cd app/build/outputs/apk/release/
-          
+          echo "| Architecture | File Name |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          cd app/build/outputs/apk/debug/
           for file in warptunnel-*.apk; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              filesize=$(du -h "$file" | cut -f1)
-              sha256=$(sha256sum "$file" | cut -d' ' -f1 | cut -c1-16)
-              
-              if [[ "$file" == *"arm64-v8a"* ]]; then
-                arch="🟢 ARM64-v8a"
-              elif [[ "$file" == *"armeabi-v7a"* ]]; then
-                arch="🟡 ARMv7-a"
-              elif [[ "$file" == *"x86_64"* ]]; then
-                arch="🔵 x86_64"
-              elif [[ "$file" == *"universal"* ]]; then
-                arch="🟣 Universal"
-              elif [[ "$file" == *"x86"* ]]; then
-                arch="🟠 x86"
-              else
-                arch="⚪ Other"
-              fi
-              
-              echo "| $arch | \`$filename\` | $filesize | \`$sha256...\` |" >> $GITHUB_STEP_SUMMARY
-            fi
+            echo "| $(basename $file | cut -d'-' -f3) | \`$file\` |" >> $GITHUB_STEP_SUMMARY
           done
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📥 Download Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All APKs are available as downloadable artifacts in this workflow run." >> $GITHUB_STEP_SUMMARY
-
-      - name: Build Completion Status
-        run: |
-          echo "### ✅ Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.read_version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Build Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "**APK Count:** $(ls -1 app/build/outputs/apk/release/warptunnel-*.apk 2>/dev/null | wc -l)" >> $GITHUB_STEP_SUMMARY
-          echo "**Total Size:** $(du -sh app/build/outputs/apk/release/ | cut -f1)" >> $GITHUB_STEP_SUMMARY
