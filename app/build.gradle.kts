@@ -14,6 +14,7 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
+        // Handle ABI filtering for different architectures
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
             abi {
@@ -29,6 +30,7 @@ android {
                         "x86"
                     )
                 }
+                // Generate a universal APK only if no specific filters are applied
                 isUniversalApk = abiFilterList.isNullOrEmpty()
             }
         }
@@ -42,6 +44,7 @@ android {
         }
     }
 
+    // Configure CMake for Native C++ (NDK) support
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -51,6 +54,10 @@ android {
 
     buildTypes {
         release {
+            // SECURITY: Disable debugging in release builds to prevent reverse engineering
+            isDebuggable = false
+            
+            // Enable code shrinking, obfuscation, and optimization
             isMinifyEnabled = true
             isShrinkResources = true
             
@@ -58,6 +65,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        
+        debug {
+            // Enable debugging for development builds
+            isDebuggable = true
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
     }
 
@@ -76,12 +90,12 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    
-    // WireGuard Official Android SDK
+
+    // WireGuard Official Android SDK for VPN functionality
     implementation("com.wireguard.android:tunnel:1.0.20211029")
 
-    // Network / Coroutines / JSON
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Network / Coroutines / JSON libraries
+    implementation("com.squareup.okhttp3:okhttp:4.12.0" )
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.google.code.gson:gson:2.10.1")
 }
