@@ -320,11 +320,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             tvExpireDate.text = "Not Activated / Expired"
             tvExpireDate.setTextColor(Color.parseColor("#F87171"))
-
-            if (isConnected) {
-                disconnectVpn()
-                appendLog("License not found. Disconnecting...")
-            }
         }
     }
 
@@ -351,18 +346,13 @@ class MainActivity : AppCompatActivity() {
                     tvExpireDate.text = "License Expired"
                     tvExpireDate.setTextColor(Color.parseColor("#F87171"))
                     authManager.clearLicenseData()
-
-                    if (isConnected) {
-                        disconnectVpn()
-                        appendLog("⚠️ License expired. Connection terminated.")
-                    }
                     break
                 }
                 delay(1000)
             }
         }
     }
-
+    
     private fun showActivateLicenseDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_activate_license, null)
         val tvDialogHwid = dialogView.findViewById<TextView>(R.id.tvDialogHwid)
