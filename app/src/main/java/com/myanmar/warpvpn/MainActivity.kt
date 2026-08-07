@@ -294,14 +294,19 @@ class MainActivity : AppCompatActivity() {
             else -> super.onOptionsItemSelected(item)
         }
     }
-
+    
     private fun checkLicenseOnStartup() {
         lifecycleScope.launch {
             try {
                 val hwid = getDeviceHwid()
                 val (isValid, message) = authManager.checkLicenseServer(hwid)
+
+                if (!isValid) {
+                    authManager.clearLicenseData()
+                }
                 
                 updateExpireDateUI()
+                
                 if (!isValid && !isFinishing && !isDestroyed) {
                     showActivateLicenseDialog()
                 }
@@ -1020,6 +1025,11 @@ class MainActivity : AppCompatActivity() {
             val (isValid, message) = authManager.checkLicenseServer(hwid)
 
             withContext(Dispatchers.Main) {
+
+                if (!isValid) {
+                    authManager.clearLicenseData()
+                }
+                
                 updateExpireDateUI()
 
                 if (!isValid) {
@@ -1030,7 +1040,7 @@ class MainActivity : AppCompatActivity() {
                     return@withContext
                 }
 
-                appendLog("License active. Proceeding with vpn connection...")
+                appendLog("✅ License active. Proceeding with vpn connection...")
                 startActualVpnConnection()
             }
         }
