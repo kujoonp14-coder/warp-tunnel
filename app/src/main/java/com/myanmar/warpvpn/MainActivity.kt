@@ -1286,7 +1286,7 @@ class MainActivity : AppCompatActivity() {
 
             // Facebook Ping
             val fbStartTime = System.currentTimeMillis()
-            val fbAddress = InetAddress.getByName("facebook.com")
+            val fbAddress = InetAddress.getByName("h.facebook.com")
             val fbReachable = fbAddress.isReachable(2500)
             val fbPingTime = System.currentTimeMillis() - fbStartTime
 
