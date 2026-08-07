@@ -54,20 +54,47 @@ jobs:
       - name: Grant Execute Permission for Gradle Wrapper
         run: chmod +x ./gradlew
         
+      # ----------------------------------------------------
+      # 2. Build Release APKs
+      # ----------------------------------------------------
       - name: Build Release APKs
         run: ./gradlew assembleRelease --no-daemon
+
+      # ----------------------------------------------------
+      # 3. Setup Android SDK Tools & Native Signing
+      # ----------------------------------------------------
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
+
+      - name: Sign APKs with Native SDK Tools
+        run: |
         
-      - name: Sign APKs with Keystore
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
+          BUILD_TOOLS_PATH="$ANDROID_HOME/build-tools/34.0.0"
+          
+          for file in app/build/outputs/apk/release/*.apk; do
+            if [ -f "$file" ]; then
+              echo "Processing: $file"
+              
+              $BUILD_TOOLS_PATH/zipalign -v -p 4 "$file" "${file%.apk}-aligned.apk"
+              mv "${file%.apk}-aligned.apk" "$file"
+              
+              $BUILD_TOOLS_PATH/apksigner sign \
+                --ks release.keystore \
+                --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
+                --ks-pass pass:"${{ secrets.KEYSTORE_PASSWORD }}" \
+                --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
+                --v1-signing-enabled true \
+                --v2-signing-enabled true \
+                --v3-signing-enabled true \
+                "$file"
+
+              echo "Successfully signed: $file"
+            fi
+          done
+          
+          rm release.keystore
 
       # ----------------------------------------------------
       # 4. Rename APKs to warptunnel-{version}-{arch}.apk
@@ -79,8 +106,8 @@ jobs:
           
           # Rename each APK
           for file in *.apk; do
-            # Skip if already renamed
-            if [[ "$file" == warptunnel-* ]]; then
+            # Skip if already renamed or idsig file
+            if [[ "$file" == warptunnel-* ]] || [[ "$file" == *.idsig ]]; then
               continue
             fi
             
@@ -104,12 +131,12 @@ jobs:
           ls -la
 
       # ----------------------------------------------------
-      # 5. Remove original app-*.apk files
+      # 5. Remove original app-*.apk & .idsig files
       # ----------------------------------------------------
-      - name: Remove Original APK Files
+      - name: Clean Output Directory
         run: |
           cd app/build/outputs/apk/release/
-          rm -f app-*.apk
+          rm -f app-*.apk *.idsig
           echo "Remaining APK files:"
           ls -la warptunnel-*.apk
 
@@ -198,13 +225,11 @@ jobs:
             ---
             
             ### 📝 Changelog
-            - Initial release
-            - Fixed config parsing issues
-            - Added fallback API support
-            - Optimized APK sizes
-          draft: false
-          prerelease: false
-          files: app/build/outputs/apk/release/warptunnel-*.apk
+            - Fixed APK Parsing Issue
+            - Enforced Native Android V1, V2, V3 Signing
+            draft: false
+            prerelease: false
+            files: app/build/outputs/apk/release/warptunnel-*.apk
 
       # ----------------------------------------------------
       # 8. GitHub Actions Summary
