@@ -127,7 +127,7 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
         var bestIp: String? = null
         var lowestLatency = Long.MAX_VALUE
 
-        val chunkedIps = allIps.chunked(40)
+        val chunkedIps = allIps.chunked(50)
         var batchIndex = 1
 
         for (chunk in chunkedIps) {
@@ -155,7 +155,7 @@ class WgcfManager(private val onLogListener: ((String) -> Unit)? = null) {
             batchIndex++
         }
 
-        val finalIp = bestIp ?: "162.159.193.1"
+        val finalIp = bestIp ?: "8.6.112.159"
         if (bestIp != null) {
             log("🏆 Selected fastest endpoint: ${maskIp(finalIp)} with Avg Latency $lowestLatency ms")
         } else {
