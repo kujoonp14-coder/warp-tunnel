@@ -470,27 +470,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getDeviceHwid(): String {
-        val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
-        if (androidId == null || androidId == "0000000000000000") {
-            val deviceIdentifier = "35" +
-            Build.BOARD.length % 10 +
-            Build.BRAND.length % 10 +
-            Build.CPU_ABI.length % 10 +
-            Build.DEVICE.length % 10 +
-            Build.DISPLAY.length % 10 +
-            Build.HOST.length % 10 +
-            Build.ID.length % 10 +
-            Build.MANUFACTURER.length % 10 +
-            Build.MODEL.length % 10 +
-            Build.PRODUCT.length % 10 +
-            Build.TAGS.length % 10 +
-            Build.TYPE.length % 10 +
-            Build.USER.length % 10
-            return deviceIdentifier
+        val prefs = getSharedPreferences("WARP_VPN_PREFS", Context.MODE_PRIVATE)
+        val persistentHwid = prefs.getString("DEVICE_HWID_PERSISTENT", null)
+        if (persistentHwid != null) {
+            return persistentHwid
         }
+        var androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+        if (androidId == null || androidId == "0000000000000000" || androidId == "000000000") {
+            androidId = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16)
+        }
+        
+        prefs.edit().putString("DEVICE_HWID_PERSISTENT", androidId).apply()
         return androidId
     }
-
 
     private fun checkNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
