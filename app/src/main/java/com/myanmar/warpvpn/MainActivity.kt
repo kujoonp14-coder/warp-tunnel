@@ -314,16 +314,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateExpireDateUI() {
         expireTimerJob?.cancel()
-        if (authManager.isLocalLicenseValid()) {
-            val expireDateMillis = authManager.getSavedExpireDate()
+        val expireDateMillis = authManager.getSavedExpireDate()
+        val currentTime = System.currentTimeMillis()
+
+        if (authManager.isLocalLicenseValid() && expireDateMillis > currentTime) {
             startExpireCountdown(expireDateMillis)
         } else {
             tvExpireDate.text = "Not Activated / Expired"
             tvExpireDate.setTextColor(Color.parseColor("#F87171"))
+
+            authManager.clearLicenseData()
+
+            if (isConnected) {
+                disconnectVpn()
+                appendLog("License not found. Disconnecting...")
+            }
         }
     }
 
     private fun startExpireCountdown(expireDateMillis: Long) {
+        expireTimerJob?.cancel()
         expireTimerJob = lifecycleScope.launch(Dispatchers.Main) {
             while (isActive) {
                 val currentTime = System.currentTimeMillis()
@@ -334,6 +344,7 @@ class MainActivity : AppCompatActivity() {
                     val hours = (diff / (1000 * 60 * 60)) % 24
                     val minutes = (diff / (1000 * 60)) % 60
                     val seconds = (diff / 1000) % 60
+                    
                     val countdownText = if (days > 0) {
                         String.format(Locale.getDefault(), "%dd %02dh %02dm %02ds left", days, hours, minutes, seconds)
                     } else {
@@ -346,13 +357,18 @@ class MainActivity : AppCompatActivity() {
                     tvExpireDate.text = "License Expired"
                     tvExpireDate.setTextColor(Color.parseColor("#F87171"))
                     authManager.clearLicenseData()
+
+                    if (isConnected) {
+                        disconnectVpn()
+                        appendLog("⚠️ License expired. Connection terminated.")
+                    }
                     break
                 }
                 delay(1000)
             }
         }
     }
-    
+
     private fun showActivateLicenseDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_activate_license, null)
         val tvDialogHwid = dialogView.findViewById<TextView>(R.id.tvDialogHwid)
@@ -523,10 +539,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnConnectCard.setOnClickListener {
-            if (!isConnected) {
-                prepareAndConnectVpn()
+            val expireDateMillis = authManager.getSavedExpireDate()
+            val currentTime = System.currentTimeMillis()
+            
+            if (authManager.isLocalLicenseValid() && expireDateMillis > currentTime) {
+                if (isConnected) {
+                    disconnectVpn()
+                } else {
+                    prepareAndConnectVpn()
+                }
             } else {
-                disconnectVpn()
+                updateExpireDateUI()
+                showActivateLicenseDialog()
+                Toast.makeText(this, "Please activate your license first!", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -998,14 +1023,14 @@ class MainActivity : AppCompatActivity() {
                 updateExpireDateUI()
 
                 if (!isValid) {
-                    Toast.makeText(this@MainActivity, "❌ Connection denied: $message", Toast.LENGTH_LONG).show()
-                    appendLog("❌ License check failed: $message")
+                    Toast.makeText(this@MainActivity, "❌ $message", Toast.LENGTH_LONG).show()
+                    appendLog("❌ $message")
                     resetUi()
                     showActivateLicenseDialog()
                     return@withContext
                 }
 
-                appendLog("✅ License active. Proceeding with vpn connection...")
+                appendLog("License active. Proceeding with vpn connection...")
                 startActualVpnConnection()
             }
         }
